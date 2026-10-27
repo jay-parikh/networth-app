@@ -1,0 +1,1 @@
+Pyodide 0.26.4 (github.com/pyodide/pyodide release pyodide-core-0.26.4 + cryptography/hashlib wheels from cdn.jsdelivr.net/pyodide/v0.26.4/full/), MPL-2.0

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en" data-build="__BUILD__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>NetWorth</title>
+<meta name="description" content="Family net-worth tracker - shares, mutual funds, FDs, PPF, EPF, NPS, gold, bonds and more. Works offline; your data stays on your device.">
+<meta name="theme-color" content="#1f4e79" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="NetWorth">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app" class="bare">
+  <aside id="side" aria-label="Sections"></aside>
+  <div id="main">
+    <header id="top"></header>
+    <main id="page" tabindex="-1"><div class="welcome"><span class="spinner"></span><p>Loading…</p></div></main>
+  </div>
+  <nav id="tabs" aria-label="Sections"></nav>
+</div>
+<div id="modal-root"></div>
+<noscript><p style="padding:24px">NetWorth needs JavaScript.</p></noscript>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

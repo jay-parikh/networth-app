@@ -1,0 +1,12 @@
+# built by tools/build.py - rebuild instead of committing
+dist/
+build/
+networth-web.zip
+
+# the Netlify CLI's link to the deployed site (machine-specific)
+.netlify/
+
+# Python / editor clutter
+__pycache__/
+*.pyc
+.DS_Store

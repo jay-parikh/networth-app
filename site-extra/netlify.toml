@@ -1,0 +1,9 @@
+# NetWorth web app - Netlify settings (Git or CLI deploys).
+# No build step: the site is already built. The function is the market-data
+# relay the app uses for "Update prices".
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"

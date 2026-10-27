@@ -1,0 +1,336 @@
+// Form + card definitions for every list in the workbook. Field names are the
+// NetWorth data-model names (networth/model.py); help texts are the
+// workbook's own header comments, so the app explains things the same way.
+
+import { money, price, num, pct, rate, date, signedMoney, esc } from './fmt.js';
+
+const G_XIRR = 'XIRR = your return a year - it counts WHEN you invested, not just how much. Worked out on every update.';
+const G_ISIN = 'ISIN = the code that identifies it, on your statement. It fills in when you pick from the list - you rarely type it.';
+const G_NAV = 'NAV = the price of one unit of the fund.';
+
+// field: {k, label, type, help, opts, req, adv, ro, dflt}
+// types: text, number, money, price, rate, date, select, owner, stock, mf, nps, bank, ppfacct
+export const COLLECTIONS = {
+  equity: {
+    title: 'Shares', sheet: 'Equity', singular: 'holding', cls: 'equity',
+    hint: 'One row per purchase (lot). Pick the stock from the list - the ISIN fills itself. Prices refresh when you update.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'scrip', label: 'Stock', type: 'stock', req: true },
+      { k: 'qty', label: 'Quantity', type: 'number', help: 'As bought. After a split/bonus, "Qty today" shows the post-action share count - matching your demat (your broker\'s app).' },
+      { k: 'avg_cost', label: 'Avg. cost ₹/share', type: 'price', help: 'As bought (per share). Bought before Feb 2018 and don\'t know the price? Leave it blank - the official 31-Jan-2018 value is filled in (the tax rule for old purchases) and marked amber.' },
+      { k: 'cost_date', label: 'Cost date', type: 'date', help: 'When you bought. Needed for the return (XIRR) and the capital-gains view.' },
+      { k: 'manual_price', label: 'Price if unlisted ₹', type: 'price', help: 'Own shares that aren\'t listed on an exchange yet? Type what one share is worth here. The moment the company lists, the market price takes over by itself. Leave blank for listed shares.' },
+      { k: 'tax_type', label: 'Tax type', type: 'select', opts: ['', 'Equity', 'Debt', 'Gold-Silver'], help: 'Leave blank for shares and index ETFs. Pick Gold-Silver for a gold or silver ETF, or Debt for a bond ETF: those are NOT taxed as equity. Only the Capital Gains view uses this.' },
+      { k: 'isin_override', label: 'ISIN (only if not in the list)', type: 'text', adv: true, help: G_ISIN },
+    ],
+    readonly: [
+      { k: 'close', label: 'Closing price', fmt: price },
+      { k: 'prev_close', label: 'Prev. close', fmt: price },
+      { k: 'close_date', label: 'Price date', fmt: date },
+      { k: 'ca_factor', label: 'Adj factor (splits/bonuses)', fmt: v => num(v, 4) },
+      { k: 'cost_factor', label: 'Cost factor (demerger)', fmt: v => num(v, 4) },
+      { k: 'flag', label: 'Flags', fmt: v => esc(v) },
+      { k: 'qty_asof', label: 'Qty as of (import)', fmt: date },
+    ],
+    card: r => ({
+      title: r.scrip || r.isin_override || '(no stock)',
+      sub: [r.owner, r.c.qty_today != null ? `${num(r.c.qty_today)} sh` : '', r.c.isin].filter(Boolean).join(' · '),
+      value: money(r.c.cur_val), delta: r.c.net_chg, deltaPct: r.c.invested ? r.c.net_chg / r.c.invested : null,
+      extra: [r.close != null ? `${price(r.close)} on ${date(r.close_date)}` : (r.manual_price != null ? `Unlisted · ${price(r.manual_price)}` : 'No price yet'),
+        r.c.day_chg != null ? `Day ${signedMoney(r.c.day_chg)}` : '', r.c.xirr != null ? `XIRR ${pct(r.c.xirr)}` : ''],
+    }),
+  },
+  equity_sells: {
+    title: 'Shares you sold', sheet: 'Equity_Sells', singular: 'sale', cls: 'equity',
+    hint: 'One row per sale - copy the numbers from your contract note. Also reduce the Quantity on the Shares list: that list is what you own now; this one is the record of what you sold.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'scrip', label: 'Stock', type: 'stock', req: true },
+      { k: 'qty', label: 'Qty sold', type: 'number', help: 'Shares sold, as the contract note shows them (today\'s share count, after any splits).' },
+      { k: 'buy_date', label: 'Buy date', type: 'date', help: 'When you bought them. Shares from a demerger? Keep the original company\'s buy date - the holding period carries over.' },
+      { k: 'buy_price', label: 'Buy price ₹/share', type: 'price', help: 'Per share, as your broker\'s P&L shows it. Bought before Feb 2018 and don\'t know it? Leave it blank - the official 31-Jan-2018 value applies. A blank-price sale shows in the tax view but stays out of your return (XIRR).' },
+      { k: 'sell_date', label: 'Sell date', type: 'date' },
+      { k: 'sell_price', label: 'Sell price ₹/share', type: 'price' },
+      { k: 'notes', label: 'Notes', type: 'text' },
+      { k: 'isin_override', label: 'ISIN (only if not in the list)', type: 'text', adv: true, help: G_ISIN },
+    ],
+    card: r => ({
+      title: r.scrip || r.isin_override, sub: [r.owner, r.qty != null ? `${num(r.qty)} sh` : '', r.sell_date ? `sold ${date(r.sell_date)}` : ''].filter(Boolean).join(' · '),
+      value: money(r.c.proceeds), delta: r.c.gain, extra: [r.buy_price != null ? `Bought @ ${price(r.buy_price)}` : 'Buy price blank (2018 value)', r.sell_price != null ? `Sold @ ${price(r.sell_price)}` : ''],
+    }),
+  },
+  mutual_funds: {
+    title: 'Mutual funds', sheet: 'MutualFunds', singular: 'fund', cls: 'mutual_funds',
+    hint: 'One row per fund and person. Units and Invested come from the transactions (SIP ledger) - add purchases there.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'scheme', label: 'Scheme', type: 'mf', req: true },
+      { k: 'tax_type', label: 'Tax type', type: 'select', opts: ['', 'Equity', 'Debt'], help: 'For the Capital Gains view. Equity = most share funds (incl. ELSS and index funds). Debt = bond, liquid and gilt funds. Blank counts as Equity.' },
+      { k: 'isin_override', label: 'ISIN (only if not in the list)', type: 'text', adv: true, help: G_ISIN },
+      { k: 'fund_house_override', label: 'Fund house (only if not in the list)', type: 'text', adv: true },
+    ],
+    readonly: [
+      { k: 'current_nav', label: 'Current NAV', fmt: v => num(v, 4) },
+      { k: 'xirr', label: 'XIRR', fmt: pct },
+    ],
+    card: r => ({
+      title: r.scheme || r.isin_override, sub: [r.owner, r.c.units ? `${num(r.c.units)} units` : '', r.c.fund_house].filter(Boolean).join(' · '),
+      value: money(r.c.cur_val), delta: r.c.net_chg, deltaPct: r.c.return_pct,
+      extra: [r.current_nav != null ? `NAV ${num(r.current_nav, 4)}` : 'No NAV yet', r.c.invested ? `Invested ${money(r.c.invested)}` : '', r.xirr != null ? `XIRR ${pct(r.xirr)}` : ''],
+    }),
+  },
+  sip: {
+    title: 'Fund transactions', sheet: 'MF_SIP', singular: 'transaction', cls: 'mutual_funds',
+    hint: 'One row per purchase - SIP instalment or lump sum. A redemption (sale) is a negative Amount.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'scheme', label: 'Scheme', type: 'mf', req: true },
+      { k: 'txn_date', label: 'Date', type: 'date', req: true },
+      { k: 'amount', label: 'Amount ₹ (negative = redemption)', type: 'money', req: true },
+      { k: 'nav', label: 'NAV on date', type: 'number', help: `${G_NAV} Yours is on the purchase statement.` },
+      { k: 'units_override', label: 'Units (only if you know units, not the NAV)', type: 'number', help: 'Units = Amount / NAV (worked out). If you know the units but not the NAV, type the units from your statement here.' },
+      { k: 'isin_override', label: 'ISIN (only if not in the list)', type: 'text', adv: true, help: G_ISIN },
+      { k: 'fund_house_override', label: 'Fund house (only if not in the list)', type: 'text', adv: true },
+    ],
+    card: r => ({
+      title: r.scheme || r.isin_override, sub: [r.owner, date(r.txn_date)].filter(Boolean).join(' · '),
+      value: money(r.amount), extra: [r.nav != null ? `NAV ${num(r.nav, 4)}` : '', r.c.units != null ? `${num(r.c.units)} units` : 'Units unknown'],
+      tone: r.amount < 0 ? 'neg' : '',
+    }),
+  },
+  fixed_deposits: {
+    title: 'Fixed deposits', sheet: 'FixedDeposits', singular: 'FD', cls: 'fixed_deposits',
+    hint: 'Value today and maturity value work themselves out from the rate and dates.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'bank', label: 'Bank / institution', type: 'bank' },
+      { k: 'fd_no', label: 'FD no.', type: 'text' },
+      { k: 'principal', label: 'Principal ₹', type: 'money', req: true, help: 'The amount you deposited.' },
+      { k: 'rate', label: 'Rate % p.a.', type: 'rate', help: 'The interest rate a year (p.a. = per annum), from your FD receipt.' },
+      { k: 'start', label: 'Start date', type: 'date' },
+      { k: 'maturity', label: 'Maturity date', type: 'date' },
+      { k: 'comp_per_year', label: 'Compounding per year', type: 'number', dflt: 4, help: 'How many times a year interest is added: 4 = quarterly (most banks), 1 = yearly. It\'s on your FD receipt.' },
+    ],
+    card: r => ({
+      title: r.bank || 'Fixed deposit', sub: [r.owner, r.fd_no, r.rate != null ? `${rate(r.rate)} p.a.` : ''].filter(Boolean).join(' · '),
+      value: money(r.c.value_today), extra: [`Principal ${money(r.principal)}`, r.maturity ? `Matures ${date(r.maturity)} → ${money(r.c.maturity_value)}` : ''],
+    }),
+  },
+  ppf: {
+    title: 'PPF', sheet: 'PPF', singular: 'account', cls: 'ppf',
+    hint: 'For accuracy, log deposits under "Deposits" - then Balance today, Interest and XIRR follow the official PPF interest rule. No deposits logged? The Current balance you type is used as-is.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'institution', label: 'Institution', type: 'text' },
+      { k: 'account_no', label: 'Account no.', type: 'text', req: true },
+      { k: 'balance', label: 'Current balance ₹', type: 'money', help: 'Only used when this account has NO deposits logged. With deposits, Balance today is computed from them.' },
+      { k: 'as_on', label: 'Balance as-on', type: 'date', help: 'The date your typed balance was true - from your passbook or statement.' },
+      { k: 'rate', label: 'Rate % (ref)', type: 'rate', help: 'Filled in with the current PPF rate if left blank; type one to pin a specific rate.' },
+      { k: 'notes', label: 'Notes', type: 'text' },
+    ],
+    readonly: [
+      { k: 'interest_earned', label: 'Interest earned', fmt: money },
+      { k: 'xirr', label: 'XIRR', fmt: pct },
+    ],
+    card: r => ({
+      title: r.institution || 'PPF account', sub: [r.owner, r.account_no].filter(Boolean).join(' · '),
+      value: money(r.c.balance_today),
+      extra: [r.c.ledger ? 'From deposits (official rule)' : (r.as_on ? `Typed balance, as on ${date(r.as_on)}` : 'Typed balance'),
+        r.interest_earned != null ? `Interest ${money(r.interest_earned)}` : '', r.xirr != null ? `XIRR ${pct(r.xirr)}` : ''],
+    }),
+  },
+  ppf_ledger: {
+    title: 'PPF deposits', sheet: 'PPF_Ledger', singular: 'deposit', cls: 'ppf',
+    hint: 'One row per PPF deposit. Owner + Account no. must match an account on the PPF list.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'account_no', label: 'Account no.', type: 'ppfacct', req: true },
+      { k: 'txn_date', label: 'Date', type: 'date', req: true, help: 'A deposit on or before the 5th earns interest for that month.' },
+      { k: 'amount', label: 'Amount ₹', type: 'money', req: true },
+    ],
+    card: r => ({ title: money(r.amount) || '—', sub: [r.owner, r.account_no, date(r.txn_date)].filter(Boolean).join(' · ') }),
+  },
+  epf: {
+    title: 'EPF', sheet: 'EPF', singular: 'account', cls: 'epf',
+    hint: 'Copy the balance and its date from your EPFO passbook - that\'s all. It grows at the current EPF rate until you paste a newer balance.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'establishment', label: 'Establishment / UAN', type: 'text', help: 'Your employer\'s name and your UAN - the 12-digit number on your EPFO passbook.' },
+      { k: 'member_id', label: 'Member ID', type: 'text' },
+      { k: 'balance', label: 'Current balance ₹', type: 'money', req: true, help: 'The closing balance on your EPFO passbook (employee + employer share).' },
+      { k: 'as_on', label: 'Balance as-on', type: 'date', help: 'The date that balance was true - the passbook says.' },
+      { k: 'rate', label: 'Rate %', type: 'rate', help: 'The EPFO annual rate. Left blank, the current declared rate is filled in.' },
+      { k: 'notes', label: 'Notes', type: 'text' },
+    ],
+    card: r => ({ title: r.establishment || 'EPF', sub: [r.owner, r.member_id].filter(Boolean).join(' · '), value: money(r.c.balance_today),
+      extra: [r.balance != null ? `Passbook ${money(r.balance)}${r.as_on ? ` on ${date(r.as_on)}` : ''}` : '', r.rate != null ? `${rate(r.rate)} a year` : ''] }),
+  },
+  bonds: {
+    title: 'Bonds', sheet: 'Bonds', singular: 'bond', cls: 'bonds',
+    hint: 'Fill Buy date - bonds without it stay out of XIRR. Current price refreshes on update when the ISIN trades.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'issuer', label: 'Issuer / bond', type: 'text', req: true },
+      { k: 'isin', label: 'ISIN', type: 'text', help: G_ISIN },
+      { k: 'qty', label: 'Qty', type: 'number' },
+      { k: 'face', label: 'Face value ₹', type: 'money', help: 'What each bond pays back at maturity - its printed value. For bonds that pay everything at the end, set Face value to that final amount and Coupon to 0.' },
+      { k: 'buy_price', label: 'Buy price ₹', type: 'price' },
+      { k: 'cur_price', label: 'Current price ₹', type: 'price', help: 'Filled by the update when the ISIN trades on the exchange; type it yourself otherwise.' },
+      { k: 'coupon', label: 'Coupon % p.a.', type: 'rate', help: 'Coupon = the bond\'s interest rate a year, paid on the Face value.' },
+      { k: 'maturity', label: 'Maturity date', type: 'date' },
+      { k: 'buy_date', label: 'Buy date', type: 'date' },
+    ],
+    card: r => ({ title: r.issuer || r.isin, sub: [r.owner, r.qty != null ? `${num(r.qty)} units` : '', r.coupon != null ? `${rate(r.coupon)} coupon` : ''].filter(Boolean).join(' · '),
+      value: money(r.c.cur_val), delta: r.c.net_chg,
+      extra: [r.maturity ? `Matures ${date(r.maturity)}` : '', r.c.maturity_value != null ? `Pays back ${money(r.c.maturity_value)}` : '', r.c.coupons_left ? `Coupons to come ${money(r.c.coupons_left)}` : ''] }),
+  },
+  bullion: {
+    title: 'Gold & silver', sheet: 'Gold_Silver', singular: 'item', cls: 'gold_silver',
+    hint: 'Coins, bars, jewellery, gold bonds. Weigh metal in grams and pick the type - today\'s value follows the daily rate. Jewellery: add purity (22K = 0.916). Prefer your jeweller\'s rate? Type a Rate override - it wins. SGBs: fill the ISIN, they price like shares.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'metal_type', label: 'Type', type: 'select', opts: ['Gold', 'Silver', 'SGB'], req: true, help: 'SGB = Sovereign Gold Bond - a government bond that prices like a share (fill its ISIN too).' },
+      { k: 'description', label: 'Description / series', type: 'text', help: 'E.g. "Gold coins, 2 x 10 g (24K)", "Silver bar, 1 kg", "Jewellery, 40 g (22K)", "SGB 2023-24 Ser II".' },
+      { k: 'isin', label: 'ISIN (SGB only)', type: 'text', help: G_ISIN },
+      { k: 'qty', label: 'Qty (grams / units)', type: 'number', help: 'Total weight in grams (a 10 g coin x 2 = 20). SGBs: units from your statement (1 unit = 1 g).' },
+      { k: 'purity', label: 'Purity', type: 'number', help: 'Fine-metal fraction: 24K/SGB = blank or 1, 22K = 0.916, 18K = 0.75.' },
+      { k: 'buy_price', label: 'Buy price ₹/unit', type: 'price' },
+      { k: 'buy_date', label: 'Buy date', type: 'date' },
+      { k: 'rate_override', label: 'Rate override ₹/g', type: 'price', help: 'Your own ₹/gram (e.g. the jeweller\'s board rate). When set, it always wins over the daily rate.' },
+      { k: 'maturity', label: 'Maturity (SGB)', type: 'date' },
+    ],
+    readonly: [{ k: 'rate_auto', label: 'Rate today (auto)', fmt: price }],
+    card: r => ({ title: r.description || r.metal_type, sub: [r.owner, r.metal_type, r.qty != null ? `${num(r.qty)} ${r.metal_type === 'SGB' ? 'units' : 'g'}` : ''].filter(Boolean).join(' · '),
+      value: money(r.c.cur_val), delta: r.c.net_chg,
+      extra: [r.rate_override != null ? `Your rate ${price(r.rate_override)}` : (r.rate_auto != null ? `Rate ${price(r.rate_auto)}` : 'No rate yet'), r.purity ? `Purity ${r.purity}` : ''] }),
+  },
+  nps: {
+    title: 'NPS', sheet: 'NPS', singular: 'scheme', cls: 'nps',
+    hint: 'Pick the scheme and type your units (both on your CRA statement) - the NAV and value fill in on update. Add what you\'ve contributed so far for a return figure.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'pran', label: 'PRAN', type: 'text', help: 'Your NPS account number - it\'s at the top of your NPS/CRA statement.' },
+      { k: 'scheme', label: 'Scheme', type: 'nps', req: true },
+      { k: 'units', label: 'Units', type: 'number' },
+      { k: 'total_contributed', label: 'Total contributed ₹', type: 'money', help: 'Optional - enables an approximate return (XIRR).' },
+      { k: 'first_contribution', label: 'First contribution', type: 'date', help: 'Optional - the approximate XIRR assumes everything went in on this date.' },
+      { k: 'scheme_code_override', label: 'Scheme code (only if not in the list)', type: 'text', adv: true },
+    ],
+    readonly: [{ k: 'current_nav', label: 'Current NAV', fmt: v => num(v, 4) }, { k: 'xirr', label: 'XIRR (approx.)', fmt: pct }],
+    card: r => ({ title: r.scheme, sub: [r.owner, r.c.code, r.units != null ? `${num(r.units)} units` : ''].filter(Boolean).join(' · '), value: money(r.c.cur_val),
+      extra: [r.current_nav != null ? `NAV ${num(r.current_nav, 4)}` : 'No NAV yet', r.xirr != null ? `XIRR ${pct(r.xirr)}` : ''] }),
+  },
+  manual_assets: {
+    title: 'Other assets', sheet: 'Manual_Assets', singular: 'asset', cls: 'manual',
+    hint: 'Things you value yourself: the house, savings balances, a policy\'s surrender value, anything else. Only two numbers matter - what it\'s worth today and (if you like) what you paid. Refresh the value now and then (amber after 90 days).',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner', req: true },
+      { k: 'asset_class', label: 'Class', type: 'select', opts: ['Property', 'Cash', 'Insurance', 'Other'], req: true, help: 'Each is its own line on the Dashboard.' },
+      { k: 'description', label: 'Description', type: 'text', help: 'E.g. "Apartment (self-occupied)", "Savings account balance", "Life policy - surrender value today".' },
+      { k: 'institution', label: 'Institution / ref', type: 'text' },
+      { k: 'value', label: 'Current value ₹', type: 'money', req: true, help: 'What it is worth today: your estimate, the account balance, or the insurer\'s surrender value. This is the number the Dashboard uses.' },
+      { k: 'as_on', label: 'Value as-on', type: 'date', help: 'When you last checked the value. Amber after 90 days.' },
+      { k: 'invested', label: 'Invested / cost ₹', type: 'money', help: 'Optional - what you paid. Property: purchase cost. Insurance: premiums paid so far. Enables Net change and a return figure.' },
+      { k: 'cost_date', label: 'Cost date', type: 'date' },
+      { k: 'notes', label: 'Notes', type: 'text' },
+    ],
+    card: r => ({ title: r.description || r.asset_class, sub: [r.owner, r.asset_class, r.institution].filter(Boolean).join(' · '), value: money(r.value), delta: r.c.net_chg,
+      extra: [r.as_on ? `as on ${date(r.as_on)}` : ''] }),
+  },
+  by_scrip: {
+    title: 'By stock (family)', sheet: 'By Scrip', singular: 'stock', cls: 'equity',
+    hint: 'Total family quantity and value per stock, split by person. Every stock you hold gets its row automatically.',
+    fields: [
+      { k: 'isin', label: 'ISIN', type: 'text', req: true, help: G_ISIN },
+      { k: 'name', label: 'Name', type: 'text' },
+    ],
+    card: (r, ctx) => ({ title: r.name || r.isin, sub: [r.isin, r.c.total_qty != null ? `${num(r.c.total_qty)} sh` : ''].filter(Boolean).join(' · '),
+      value: money(r.c.cur_val), extra: Object.entries(r.c.by_person || {}).filter(([, q]) => q).map(([p, q]) => `${p} ${num(q)}`) }),
+  },
+  dividends: {
+    title: 'Dividends', sheet: 'Dividends', singular: 'dividend', cls: 'equity',
+    hint: 'Filled in on every update: one row per dividend your stocks declared this financial year. Older years stay as a record. Qty and amount are estimates from your current holdings (amber) - add a Manual row for anything missed.',
+    fields: [
+      { k: 'owner', label: 'Owner', type: 'owner' },
+      { k: 'scrip', label: 'Stock', type: 'text' },
+      { k: 'isin', label: 'ISIN', type: 'text', help: G_ISIN },
+      { k: 'div_type', label: 'Type', type: 'select', opts: ['Final', 'Interim', 'Special'] },
+      { k: 'ex_date', label: 'Ex-date', type: 'date', help: 'The ex-date decides who gets the dividend: own the share before this date and it\'s yours.' },
+      { k: 'rate', label: 'Rate ₹/share', type: 'price' },
+      { k: 'qty', label: 'Qty @ ex-date (est.)', type: 'number', help: 'Estimated shares held on the ex-date. If you sold in between, correct it here - your row becomes Manual and replaces the automatic one.' },
+      { k: 'fy', label: 'FY', type: 'text', help: 'Financial year (April to March), e.g. 2026-27. Left blank, it is filled from the ex-date.' },
+      { k: 'details', label: 'Details', type: 'text' },
+    ],
+    card: r => ({ title: r.scrip || r.isin, sub: [r.owner, r.div_type, r.ex_date ? `ex ${date(r.ex_date)}` : '', r.source].filter(Boolean).join(' · '),
+      value: money(r.c.amount), extra: [r.rate != null ? `${price(r.rate)}/share × ${num(r.qty)}` : '', `FY ${r.fy}`] }),
+  },
+  corporate_actions: {
+    title: 'Corporate actions', sheet: 'Corporate_Actions', singular: 'action', cls: 'equity',
+    hint: 'Auto rows are fetched for your held stocks on every update; Curated rows (mergers/demergers) ship with the app. Add Manual rows for anything missed. Your holdings are never rewritten - factors apply at valuation time.',
+    fields: [
+      { k: 'symbol', label: 'Symbol', type: 'text' },
+      { k: 'isin', label: 'ISIN', type: 'text', req: true },
+      { k: 'type', label: 'Type', type: 'select', opts: ['SPLIT', 'BONUS', 'CONSOLIDATION', 'MERGER', 'DEMERGER', 'ISIN_CHANGE'], req: true },
+      { k: 'ex_date', label: 'Ex-date', type: 'date', req: true },
+      { k: 'ratio_from', label: 'Ratio from', type: 'number', help: 'SPLIT/CONSOLIDATION: old face value. BONUS/MERGER/DEMERGER: A of A:B (A new shares per B held).' },
+      { k: 'ratio_to', label: 'Ratio to', type: 'number', help: 'SPLIT/CONSOLIDATION: new face value. BONUS/MERGER/DEMERGER: B of A:B.' },
+      { k: 'details', label: 'Details', type: 'text' },
+      { k: 'new_isin', label: 'New ISIN', type: 'text', help: 'MERGER/ISIN_CHANGE: the surviving security\'s ISIN. DEMERGER: the resulting security of this row (one row per outcome; the parent-retention row repeats the old ISIN).' },
+      { k: 'cost_pct', label: 'Cost %', type: 'number', help: 'Cost-basis share in percent. A demerger\'s rows must sum to 100 across the event.' },
+      { k: 'new_name', label: 'New name', type: 'text', help: 'What to call the new company on your Shares list.' },
+      { k: 'new_symbol', label: 'New symbol', type: 'text' },
+    ],
+    readonly: [{ k: 'source', label: 'Source', fmt: v => esc(v) }, { k: 'applied', label: 'Applied', fmt: date }],
+    card: r => ({ title: `${r.type} · ${r.symbol || r.isin}`, sub: [date(r.ex_date), r.source, r.c.factor != null ? `factor ${num(r.c.factor, 4)}` : ''].filter(Boolean).join(' · '),
+      extra: [r.details] }),
+  },
+  import_map: {
+    title: 'Import: who owns what', sheet: 'Import_Map', singular: 'mapping', cls: null,
+    hint: 'Filled in when you import a fund statement or broker file. Fix a wrong Owner here and import again.',
+    fields: [
+      { k: 'source', label: 'Source', type: 'text' },
+      { k: 'account', label: 'Account / folio', type: 'text', req: true },
+      { k: 'name_hint', label: 'Name on statement', type: 'text' },
+      { k: 'owner', label: 'Owner', type: 'owner', req: true, help: 'A person from the family list. Rows with a blank or unknown Owner are left out of imports.' },
+    ],
+    card: r => ({ title: r.account, sub: [r.source, r.name_hint].filter(Boolean).join(' · '), value: esc(r.owner || '(no owner)') }),
+  },
+  imported_files: {
+    title: 'Files already read', sheet: 'Import_Map', singular: 'file', cls: null, noAdd: true,
+    hint: 'Delete a row to be able to import that file again.',
+    fields: [],
+    card: r => ({ title: r.file, sub: [r.decision, date(r.imported_on), r.fingerprint].filter(Boolean).join(' · ') }),
+  },
+};
+
+// asset-class key -> collections shown on its page (first = main list)
+export const CLASS_PAGES = {
+  equity: { title: 'Shares', tabs: ['equity', 'by_scrip', 'dividends', 'equity_sells', 'corporate_actions'] },
+  mutual_funds: { title: 'Mutual funds', tabs: ['mutual_funds', 'sip'] },
+  fixed_deposits: { title: 'Fixed deposits', tabs: ['fixed_deposits'] },
+  ppf: { title: 'PPF', tabs: ['ppf', 'ppf_ledger'] },
+  epf: { title: 'EPF', tabs: ['epf'] },
+  bonds: { title: 'Bonds', tabs: ['bonds'] },
+  gold_silver: { title: 'Gold & silver', tabs: ['bullion'] },
+  nps: { title: 'NPS', tabs: ['nps'] },
+  real_estate: { title: 'Other assets', tabs: ['manual_assets'], filter: 'Property' },
+  cash: { title: 'Other assets', tabs: ['manual_assets'], filter: 'Cash' },
+  insurance: { title: 'Other assets', tabs: ['manual_assets'], filter: 'Insurance' },
+  other_assets: { title: 'Other assets', tabs: ['manual_assets'], filter: 'Other' },
+};
+
+export const TAB_LABEL = {
+  equity: 'Holdings', by_scrip: 'By stock', dividends: 'Dividends', equity_sells: 'Sales',
+  corporate_actions: 'Actions', mutual_funds: 'Funds', sip: 'Transactions', fixed_deposits: 'FDs',
+  ppf: 'Accounts', ppf_ledger: 'Deposits', epf: 'Accounts', bonds: 'Bonds', bullion: 'Items',
+  nps: 'Schemes', manual_assets: 'Assets',
+};
+
+export const FLAG_TEXT = {
+  stale: 'Price older than a week', suspended: 'Suspended - not traded for 3+ weeks',
+  delisted: 'Delisted - kept at last price', fmv: 'Cost = 31-Jan-2018 value (estimate)',
+  unlisted: 'Valued at your own price', future: 'Future date - counted when it arrives',
+  matured: 'Matured', bad_class: 'Pick Property / Cash / Insurance / Other',
+  override: 'Your rate',
+};

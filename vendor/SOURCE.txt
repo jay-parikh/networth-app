@@ -1,0 +1,1 @@
+NetWorth reference implementation v1.7.7, github.com/jay-parikh/NetWorth commit 101f11d, with the two fixes listed in PATCHES.md (AMFI layout, IBJA page).
